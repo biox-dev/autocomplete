@@ -16,6 +16,9 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          # Full history so the tag is available for `git archive`.
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -40,16 +43,13 @@ jobs:
       - name: Build VSIX
         run: npx @vscode/vsce package --no-dependencies --out .
 
-      # Archive the source (excluding build artifacts and dependencies).
+      # Archive the committed source at this tag. Using `git archive`
+      # avoids tar's "file changed as we read it" error (the archive is
+      # written inside the directory being archived) and only packages
+      # files that are actually committed to git.
       - name: Create source archive
         run: |
-          tar -czf "autocomplete-source-${{ steps.tag.outputs.tag }}.tar.gz" \
-            --exclude='./.git' \
-            --exclude='./.github' \
-            --exclude='./node_modules' \
-            --exclude='./out' \
-            --exclude='./*.vsix' \
-            .
+          git archive --format=tar.gz -o "autocomplete-source-${{ steps.tag.outputs.tag }}.tar.gz" "${{ steps.tag.outputs.tag }}"
 
       # Create (or update) a GitHub Release for this tag and attach assets.
       # GitHub also auto-attaches its own "Source code (zip/tar.gz)" links.
