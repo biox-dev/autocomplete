@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { DEFAULT_SYSTEM_PROMPT, getApiKey, getConfig, type Config } from './config';
-import { chatCompletion, type ChatMessage } from './deepseek';
+import { chatCompletion, ApiError, type ChatMessage } from './deepseek';
 
 let warnedAboutMissingKey = false;
 
@@ -35,8 +35,103 @@ function logMessages(cfg: Config, messages: ChatMessage[], response: string): vo
 	channel.appendLine('');
 }
 
+/** Prints a failed LLM request (and any upstream error details) to OUTPUT. */
+function logRequestFailure(cfg: Config, messages: ChatMessage[], err: unknown): void {
+	if (!cfg.logMessages) {
+		return;
+	}
+	const channel = getLogChannel();
+	channel.show(true);
+	const stamp = new Date().toLocaleTimeString();
+	channel.appendLine(`==================== [${stamp}] ====================`);
+	channel.appendLine('--- Request FAILED ---');
+	for (const msg of messages) {
+		channel.appendLine(`[${msg.role}]`);
+		channel.appendLine(msg.content);
+		channel.appendLine('----------------------------------');
+	}
+	channel.appendLine('--- Error ---');
+	if (err instanceof ApiError) {
+		channel.appendLine(`${err.message}`);
+		if (err.status) {
+			channel.appendLine(`HTTP ${err.status} ${err.statusText ?? ''}`.trimEnd());
+		}
+		if (err.body) {
+			channel.appendLine('Response body:');
+			channel.appendLine(err.body);
+		}
+	} else if (err instanceof Error) {
+		channel.appendLine(err.message);
+	} else {
+		channel.appendLine(String(err));
+	}
+	channel.appendLine('====================================================');
+	channel.appendLine('');
+}
+
 export function resetWarnings(): void {
 	warnedAboutMissingKey = false;
+}
+
+/* ------------------------------------------------------------------ */
+/* Status bar request indicator (bottom of the editor window).         */
+/* ------------------------------------------------------------------ */
+
+let statusItem: vscode.StatusBarItem | undefined;
+let statusHideTimer: NodeJS.Timeout | undefined;
+
+/** Lazily creates and returns the shared status bar item. */
+function getStatusItem(): vscode.StatusBarItem {
+	if (!statusItem) {
+		statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+	}
+	return statusItem;
+}
+
+function clearStatusTimer(): void {
+	if (statusHideTimer) {
+		clearTimeout(statusHideTimer);
+		statusHideTimer = undefined;
+	}
+}
+
+/** Shows a transient loading indicator while an LLM request is in flight. */
+function showRequestLoading(): void {
+	clearStatusTimer();
+	const item = getStatusItem();
+	item.text = '$(sync~spin) AI 请求中…';
+	item.tooltip = 'AI Autocomplete：正在向模型请求补全';
+	item.color = undefined;
+	item.show();
+}
+
+/** Clears the loading indicator and briefly reports the outcome. */
+function showRequestResult(ok: boolean): void {
+	const item = getStatusItem();
+	clearStatusTimer();
+	if (ok) {
+		item.text = '$(check) AI 完成';
+		item.tooltip = undefined;
+		item.color = new vscode.ThemeColor('testing.iconPassed');
+	} else {
+		item.text = '$(error) AI 失败';
+		item.tooltip = undefined;
+		item.color = new vscode.ThemeColor('testing.iconFailed');
+	}
+	item.show();
+	// Auto-hide the short-lived success/failure message.
+	statusHideTimer = setTimeout(() => {
+		item.hide();
+		statusHideTimer = undefined;
+	}, 1500);
+}
+
+/** Hides the indicator without showing any result (e.g. request cancelled). */
+function hideRequestIndicator(): void {
+	clearStatusTimer();
+	if (statusItem) {
+		statusItem.hide();
+	}
 }
 
 /** Cancellable delay used to debounce automatic suggestions. */
@@ -200,8 +295,15 @@ export class DeepSeekInlineCompletionProvider implements vscode.InlineCompletion
 		const onCancel = () => controller.abort();
 		token.onCancellationRequested(onCancel);
 
+		// Track the messages so failures can be logged to the OUTPUT channel.
+		let messages: ChatMessage[] = [];
+
 		try {
-			const messages = buildMessages(document, position, cfg);
+			messages = buildMessages(document, position, cfg);
+
+			// Show a loading indicator in the status bar while we wait for the model.
+			showRequestLoading();
+
 			const raw = await chatCompletion({
 				baseUrl: cfg.baseUrl,
 				apiKey,
@@ -216,11 +318,13 @@ export class DeepSeekInlineCompletionProvider implements vscode.InlineCompletion
 		logMessages(cfg, messages, raw);
 
 			if (token.isCancellationRequested) {
+				hideRequestIndicator();
 				return empty;
 			}
 
 			const cleaned = sanitize(raw);
 			if (!cleaned) {
+				hideRequestIndicator();
 				return empty;
 			}
 
@@ -230,11 +334,15 @@ export class DeepSeekInlineCompletionProvider implements vscode.InlineCompletion
 				new vscode.Range(replaceStart, position)
 			);
 
+			showRequestResult(true);
 			return { items: [item] };
 		} catch (err) {
 			if (token.isCancellationRequested || (err instanceof Error && err.name === 'AbortError')) {
+				hideRequestIndicator();
 				return empty;
 			}
+			// Print the failure details to the OUTPUT channel when logging is enabled.
+			logRequestFailure(cfg, messages, err);
 			console.error('[AI Autocomplete] Completion request failed:', err);
 			const message =
 				err instanceof Error
@@ -243,6 +351,7 @@ export class DeepSeekInlineCompletionProvider implements vscode.InlineCompletion
 			if (isManual) {
 				void vscode.window.showErrorMessage(`AI Autocomplete: ${message}`);
 			}
+			showRequestResult(false);
 			return empty;
 		}
 	}
