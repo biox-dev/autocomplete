@@ -1,0 +1,129 @@
+{
+  "name": "autocomplete",
+  "displayName": "AI Autocomplete",
+  "description": "AI inline autocomplete for VS Code and code-server, powered by DeepSeek (OpenAI-compatible API). Shows ghost-text suggestions as you type or on demand.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "ai",
+    "autocomplete",
+    "completion",
+    "inline",
+    "deepseek",
+    "copilot",
+    "code-server"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "extensionKind": [
+    "workspace",
+    "ui"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "autocomplete.trigger",
+        "title": "AI Autocomplete: Trigger Suggestion",
+        "category": "AI Autocomplete"
+      },
+      {
+        "command": "autocomplete.setApiKey",
+        "title": "AI Autocomplete: Set API Key",
+        "category": "AI Autocomplete"
+      },
+      {
+        "command": "autocomplete.clearApiKey",
+        "title": "AI Autocomplete: Clear API Key",
+        "category": "AI Autocomplete"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "autocomplete.trigger",
+        "key": "alt+\\",
+        "when": "editorTextFocus && !editorReadonly"
+      }
+    ],
+    "configuration": {
+      "title": "AI Autocomplete",
+      "properties": {
+        "autocomplete.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable AI inline autocomplete."
+        },
+        "autocomplete.apiBaseUrl": {
+          "type": "string",
+          "default": "https://api.deepseek.com",
+          "description": "Base URL of an OpenAI-compatible Chat Completions API. Works with DeepSeek or any compatible endpoint (e.g. Ollama, vLLM)."
+        },
+        "autocomplete.model": {
+          "type": "string",
+          "default": "deepseek-chat",
+          "description": "Model to use for completions."
+        },
+        "autocomplete.maxTokens": {
+          "type": "number",
+          "default": 256,
+          "minimum": 16,
+          "maximum": 2048,
+          "description": "Maximum number of tokens to generate per completion."
+        },
+        "autocomplete.temperature": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Sampling temperature. Lower is more deterministic."
+        },
+        "autocomplete.debounceMs": {
+          "type": "number",
+          "default": 700,
+          "minimum": 0,
+          "description": "Milliseconds of inactivity before an automatic suggestion is requested while typing."
+        },
+        "autocomplete.maxContextChars": {
+          "type": "number",
+          "default": 8000,
+          "minimum": 100,
+          "description": "Maximum number of characters of code before the cursor sent to the model as context."
+        },
+        "autocomplete.apiKeyEnvVar": {
+          "type": "string",
+          "default": "DEEPSEEK_API_KEY",
+          "description": "Name of an environment variable used as a fallback API key if none is stored."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "24.x",
+    "typescript-eslint": "^8.61.1",
+    "eslint": "^10.5.0",
+    "typescript": "^6.0.3",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0"
+  },
+  "overrides": {
+    "diff": "^8.0.4",
+    "serialize-javascript": "^7.0.6"
+  }
+}
