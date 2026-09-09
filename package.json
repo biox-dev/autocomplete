@@ -43,8 +43,42 @@
         "command": "autocomplete.clearApiKey",
         "title": "AI Autocomplete: Clear API Key",
         "category": "AI Autocomplete"
+      },
+      {
+        "command": "autocomplete.openSettings",
+        "title": "AI Autocomplete: Open Settings",
+        "category": "AI Autocomplete",
+        "icon": "$(gear)"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ai-autocomplete",
+          "title": "AI Autocomplete",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ai-autocomplete": [
+        {
+          "type": "webview",
+          "id": "autocomplete.settingsView",
+          "name": "设置",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "autocomplete.openSettings",
+          "when": "view == autocomplete.settingsView",
+          "group": "navigation"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "autocomplete.trigger",
@@ -100,6 +134,16 @@
           "type": "string",
           "default": "DEEPSEEK_API_KEY",
           "description": "Name of an environment variable used as a fallback API key if none is stored."
+        },
+        "autocomplete.systemPrompt": {
+          "type": "string",
+          "default": "",
+          "description": "Optional custom system prompt used for every completion. When empty, a built-in default prompt is used."
+        },
+        "autocomplete.logMessages": {
+          "type": "boolean",
+          "default": false,
+          "description": "Print every message sent to the LLM and the returned response in the \"AI Autocomplete\" output channel."
         }
       }
     }

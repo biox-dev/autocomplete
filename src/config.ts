@@ -6,6 +6,23 @@ export const SECRET_API_KEY = 'autocomplete.apiKey';
 /** Namespace used for user-facing configuration settings. */
 const CONFIG_NS = 'autocomplete';
 
+/**
+ * The built-in default system prompt (the static part). The per-request file
+ * / language context line is prepended by the completion provider at runtime.
+ * Shown in the settings UI so users can see and edit what is sent to the model.
+ */
+export const DEFAULT_SYSTEM_PROMPT = [
+	'You are an AI code completion engine embedded in a code editor.',
+	'Complete the code that follows the given prefix at the cursor.',
+	'Rules:',
+	'- Output ONLY the new code to append at the cursor.',
+	'- Never repeat or re-output code that already exists in the prefix.',
+	'- If the cursor is in the middle of a word, finish that word first, then continue.',
+	'- Do not wrap the output in markdown code fences and do not add explanations.',
+	'- Match the existing language, indentation and code style.',
+	'- Complete naturally, continuing whole lines, statements or blocks as appropriate.',
+].join('\n');
+
 export interface Config {
 	enabled: boolean;
 	baseUrl: string;
@@ -15,6 +32,8 @@ export interface Config {
 	debounceMs: number;
 	maxContextChars: number;
 	apiKeyEnvVar: string;
+	systemPrompt: string;
+	logMessages: boolean;
 }
 
 /** Reads the current effective configuration from VS Code settings. */
@@ -29,6 +48,8 @@ export function getConfig(): Config {
 		debounceMs: c.get<number>('debounceMs', 700),
 		maxContextChars: c.get<number>('maxContextChars', 8000),
 		apiKeyEnvVar: c.get<string>('apiKeyEnvVar', 'DEEPSEEK_API_KEY'),
+		systemPrompt: c.get<string>('systemPrompt', ''),
+		logMessages: c.get<boolean>('logMessages', false),
 	};
 }
 
@@ -74,4 +95,33 @@ export async function setApiKey(secrets: vscode.SecretStorage, key: string): Pro
 /** Removes any stored API key. */
 export async function clearApiKey(secrets: vscode.SecretStorage): Promise<void> {
 	await secrets.delete(SECRET_API_KEY);
+}
+
+/** Returns true when a usable API key is stored (or available via env). */
+export async function hasApiKey(secrets: vscode.SecretStorage): Promise<boolean> {
+	return (await getApiKey(secrets)) !== undefined;
+}
+
+/** Updates a boolean/string setting in the given configuration section. */
+function setSetting(
+	key: 'enabled' | 'systemPrompt' | 'logMessages',
+	value: boolean | string
+): Thenable<void> {
+	const cfg = vscode.workspace.getConfiguration(CONFIG_NS);
+	return cfg.update(key, value, vscode.ConfigurationTarget.Global);
+}
+
+/** Enables / disables the extension via the `enabled` setting. */
+export function setEnabled(enabled: boolean): Thenable<void> {
+	return setSetting('enabled', enabled);
+}
+
+/** Enables / disables printing of LLM request/response messages to OUTPUT. */
+export function setLogMessages(log: boolean): Thenable<void> {
+	return setSetting('logMessages', log);
+}
+
+/** Saves a custom system prompt (empty string restores the built-in default). */
+export function setSystemPrompt(prompt: string): Thenable<void> {
+	return setSetting('systemPrompt', prompt);
 }

@@ -1,8 +1,39 @@
 import * as vscode from 'vscode';
-import { getApiKey, getConfig, type Config } from './config';
+import { DEFAULT_SYSTEM_PROMPT, getApiKey, getConfig, type Config } from './config';
 import { chatCompletion, type ChatMessage } from './deepseek';
 
 let warnedAboutMissingKey = false;
+
+/** Output channel used to print LLM request/response messages when enabled. */
+let logChannel: vscode.OutputChannel | undefined;
+
+function getLogChannel(): vscode.OutputChannel {
+	if (!logChannel) {
+		logChannel = vscode.window.createOutputChannel('AI Autocomplete');
+	}
+	return logChannel;
+}
+
+/** Prints the messages sent to the LLM and the returned response. */
+function logMessages(cfg: Config, messages: ChatMessage[], response: string): void {
+	if (!cfg.logMessages) {
+		return;
+	}
+	const channel = getLogChannel();
+	channel.show(true);
+	const stamp = new Date().toLocaleTimeString();
+	channel.appendLine(`==================== [${stamp}] ====================`);
+	channel.appendLine('--- Messages sent to the LLM ---');
+	for (const msg of messages) {
+		channel.appendLine(`[${msg.role}]`);
+		channel.appendLine(msg.content);
+		channel.appendLine('----------------------------------');
+	}
+	channel.appendLine('--- Response from the LLM ---');
+	channel.appendLine(response);
+	channel.appendLine('====================================================');
+	channel.appendLine('');
+}
 
 export function resetWarnings(): void {
 	warnedAboutMissingKey = false;
@@ -42,20 +73,19 @@ function buildMessages(document: vscode.TextDocument, position: vscode.Position,
 	const language = document.languageId;
 	const fileName = document.fileName.split(/[\\/]/).pop() || 'untitled';
 
+	const customPrompt = cfg.systemPrompt.trim();
+	let systemContent: string;
+	if (customPrompt && customPrompt !== DEFAULT_SYSTEM_PROMPT) {
+		// User-provided custom system prompt. We still inject minimal context
+		// about the file/language so completions stay relevant.
+		systemContent = `${customPrompt}\n\n(The user is editing a ${language} file named "${fileName}". Output only the code to insert.)`;
+	} else {
+		systemContent = `The user is editing a ${language} file named "${fileName}".\n${DEFAULT_SYSTEM_PROMPT}`;
+	}
+
 	const system: ChatMessage = {
 		role: 'system',
-		content: [
-			'You are an AI code completion engine embedded in a code editor.',
-			`The user is editing a ${language} file named "${fileName}".`,
-			'Complete the code that follows the given prefix at the cursor.',
-			'Rules:',
-			'- Output ONLY the new code to append at the cursor.',
-			'- Never repeat or re-output code that already exists in the prefix.',
-			'- If the cursor is in the middle of a word, finish that word first, then continue.',
-			'- Do not wrap the output in markdown code fences and do not add explanations.',
-			'- Match the existing language, indentation and code style.',
-			'- Complete naturally, continuing whole lines, statements or blocks as appropriate.',
-		].join('\n'),
+		content: systemContent,
 	};
 
 	const user: ChatMessage = {
@@ -63,6 +93,7 @@ function buildMessages(document: vscode.TextDocument, position: vscode.Position,
 		content: `Continue the code below. Output only the code that should be inserted at the cursor.\n\n${prefix}`,
 	};
 
+	
 	return [system, user];
 }
 
@@ -180,6 +211,9 @@ export class DeepSeekInlineCompletionProvider implements vscode.InlineCompletion
 				temperature: cfg.temperature,
 				signal: controller.signal,
 			});
+
+			// Print the request/response messages to OUTPUT when enabled.
+		logMessages(cfg, messages, raw);
 
 			if (token.isCancellationRequested) {
 				return empty;
